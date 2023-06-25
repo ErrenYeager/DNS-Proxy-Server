@@ -3,6 +3,7 @@ class DNSParser:
     def parse_dns_packet(data):
         header = data[:12]  # DNS header is 12 bytes
         questions = data[12:]  # Questions section starts from the 13th byte onwards
+        query_type = None
 
         # Parse header
         transaction_id = header[:2]
@@ -18,4 +19,12 @@ class DNSParser:
             question_parts.append(questions[idx + 1:idx + length + 1].decode())
             idx += length + 1
 
-        return transaction_id, question_parts
+        if questions[-3] == int('0x1c', 16):
+            query_type = 'AAAA'
+        elif questions[-3] == int('0x01', 16):
+            query_type = 'A'
+        else:
+            # TODO:Response to nslookup
+            raise ValueError("Unsupported query type")
+
+        return transaction_id, question_parts, query_type
