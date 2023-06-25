@@ -17,21 +17,20 @@ class DNSProxyServer:
         while True:
             data, client_address = server_socket.recvfrom(1024)
 
-            dns_packet = self.parser.parse_dns_packet(data)
-            transaction_id, request_domains = dns_packet
+            transaction_id, request_domains = self.parser.parse_dns_packet(data)
 
-            print(transaction_id)
+            domain = ".".join(request_domains)
 
-            if request_domains[0] == 'exit':
+            if domain == 'exit.com':
                 break
 
-            ip, cache_hit = self.resolver.resolve_dns(request_domains[0])
+            ip, cache_hit = self.resolver.resolve_dns(domain)
 
             # Construct DNS response packet and send it back to the client
             response_data = self.construct_dns_response(transaction_id, request_domains[0], ip)
             server_socket.sendto(response_data, client_address)
 
-            print(f'Resolved: {request_domains[0]} => {ip} (Cache {"hit" if cache_hit else "miss"})')
+            print(f'Resolved: {domain} => {ip} (Cache {"hit" if cache_hit else "miss"})')
 
         server_socket.close()
 

@@ -9,7 +9,7 @@ class DNSResolver:
     def resolve_dns(self, domain):
         if domain in self.cache:
             ip, timestamp = self.cache[domain]
-            if (timestamp - datetime.datetime.now().timestamp()) <= 5:  # Check cache expiration time
+            if (timestamp - datetime.datetime.now().timestamp()) <= 10:  # Check cache expiration time
                 return ip, True  # Cache hit
 
         try:
