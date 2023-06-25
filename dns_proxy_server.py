@@ -1,45 +1,43 @@
-import datetime
 import socket
-
-cache = {}
-
-
-def resolve_dns(input_text):
-    expiration_time_seconds = 5
-    if cache.get(input_text) and (datetime.datetime.now().timestamp() - cache[input_text][1]) <= expiration_time_seconds:
-        return cache[input_text][0], True  # Return cached IP and cache hit status
-
-    try:
-        ip = socket.gethostbyname(input_text)
-        resolution_time = datetime.datetime.now().timestamp()
-        cache[input_text] = (ip, resolution_time)
-        return ip, False  # Return resolved IP and cache miss status
-    except Exception as e:
-        return str(e), False  # Return error message and cache miss status
+from dns_parser import DNSParser
+from dns_resolver import DNSResolver
 
 
-def start_dns_proxy():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('localhost', 53))  # Bind to the DNS port (53)
+class DNSProxyServer:
+    def __init__(self):
+        self.parser = DNSParser()
+        self.resolver = DNSResolver()
 
-    print('DNS proxy server started. Listening on port 53...')
+    def start_dns_proxy(self):
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server_socket.bind(('localhost', 53))  # Bind to the DNS port (53)
 
-    while True:
-        data, client_address = server_socket.recvfrom(1024)
-        print(client_address)
-        request_domain = data.decode().strip()
+        print('DNS proxy server started. Listening on port 53...')
 
-        if request_domain == 'exit':
-            break
+        while True:
+            data, client_address = server_socket.recvfrom(1024)
 
-        ip, cache_hit = resolve_dns(request_domain)
+            dns_packet = self.parser.parse_dns_packet(data)
+            request_domain = self.parser.extract_domain_name(dns_packet)
 
-        response = f'{ip}\n' if not isinstance(ip, str) else f'Error: {ip}\n'
-        server_socket.sendto(response.encode(), client_address)
-        print(f'Resolved: {request_domain} => {response.strip()} (Cache {"hit" if cache_hit else "miss"})')
+            if request_domain == 'exit':
+                break
 
-    server_socket.close()
+            ip, cache_hit = self.resolver.resolve_dns(request_domain)
+
+            # Construct DNS response packet and send it back to the client
+            response_data = self.construct_dns_response(dns_packet, ip)
+            server_socket.sendto(response_data, client_address)
+
+            print(f'Resolved: {request_domain} => {ip} (Cache {"hit" if cache_hit else "miss"})')
+
+        server_socket.close()
+
+    def construct_dns_response(self, dns_packet, ip):
+        # TODO:Implement DNS response construction logic here
+        pass
 
 
 if __name__ == '__main__':
-    start_dns_proxy()
+    dns_proxy = DNSProxyServer()
+    dns_proxy.start_dns_proxy()
