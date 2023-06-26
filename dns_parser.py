@@ -7,6 +7,8 @@ class DNSParser:
 
         # Parse header
         transaction_id = header[:2]
+        flags = header[2:4]
+        question_count = header[4:6]
         # Extract other header fields as needed (e.g., flags, counts, etc.)
 
         # Parse questions section
@@ -27,4 +29,10 @@ class DNSParser:
             # TODO:Response to nslookup
             raise ValueError("Unsupported query type")
 
-        return transaction_id, question_parts, query_type
+        query_class = questions[-2:]
+
+        return transaction_id, flags, question_count, question_parts, query_type, query_class
+
+    @staticmethod
+    def find_ip_from_response(data):
+        pass
