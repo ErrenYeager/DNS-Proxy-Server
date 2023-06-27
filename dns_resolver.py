@@ -13,11 +13,11 @@ class DNSResolver:
         self.external_dns_servers = config["external-dns-servers"]
         self.cache = {}
 
-    def resolve_dns(self, domain, data):
-        if domain in self.cache:
-            ip, timestamp = self.cache[domain]
+    def resolve_dns(self, domain, query_type, data):
+        if (domain, query_type) in self.cache:
+            answers, timestamp = self.cache[(domain, query_type)]
             if (timestamp - datetime.datetime.now().timestamp()) <= self.cache_expiration_time:  # Check cache expiration time
-                return ip, True  # Cache hit
+                return answers, True  # Cache hit
 
         for dns_server in self.external_dns_servers:
             try:
@@ -27,10 +27,11 @@ class DNSResolver:
                     # Receive the DNS response
                     response, _ = sock.recvfrom(512)
 
-                ip = DNSParser.find_ip_from_response(response)
-
                 timestamp = datetime.datetime.now().timestamp()
-                self.cache[domain] = (ip, timestamp)
-                return ip, False  # Cache miss
+                answers = DNSParser.parse_dns_response(response)
+
+                self.cache[(domain, query_type)] = (answers, timestamp)
+
+                return answers, False  # Cache miss
             except Exception as e:
                 return None, False  # DNS resolution error

@@ -24,20 +24,24 @@ class DNSProxyServer:
             if domain == 'exit.com':
                 break
 
-            ip, cache_hit = self.resolver.resolve_dns(domain, data)
+            answers, cache_hit = self.resolver.resolve_dns(domain, query_type, data)
 
             # Construct DNS response packet and send it back to the client
-            response_data = self.construct_dns_response(transaction_id, flags, question_count, data[12:], query_type, query_class, ip)
+            response_data = self.construct_dns_response(transaction_id, flags, question_count, data[12:], query_type, query_class, answers)
             server_socket.sendto(response_data, client_address)
 
-            print(f'Resolved: {domain} => {ip} (Cache {"hit" if cache_hit else "miss"})')
+            print(f'Resolved: {domain} (Cache {"hit" if cache_hit else "miss"})')
 
         server_socket.close()
 
-    def construct_dns_response(self, transaction_id, flags, question_count, queries, query_type, query_class, ip):
+    def construct_dns_response(self, transaction_id, flags, question_count, queries, query_type, query_class, answers):
 
         # Create response header
-        header = transaction_id + flags + question_count + b'\x00\x01' + b'\x00\x00' + b'\x00\x00'
+        header = transaction_id + flags + question_count
+
+        header += len(answers).to_bytes(2, "big")  # Answer Count
+
+        header += b'\x00\x00' + b'\x00\x00'  # Authority flags (for other kind of records)
 
         # Create the DNS response packet
         response_packet = header
@@ -46,34 +50,38 @@ class DNSProxyServer:
         response_packet += queries
 
         # Add the answer section to the response packet
-        response_packet += self.create_answer_section(query_type, query_class, ip)
+        response_packet += self.create_answer_section(query_type, query_class, answers)
 
         return response_packet
 
-    def create_answer_section(self, query_type, query_class, answer):
-        if answer is None:
-            # Return empty answer section when IP address is None
-            return b''
+    def create_answer_section(self, query_type, query_class, answers):
+        answer_section = b'\xc0\x0c'
 
-        # Create the answer section using the requested domain and resolved IP address
-        # TODO: FIX ALL THIS
-        answer_section = b'\xc0\x0c'  # Pointer to domain name (compressed format)
-        answer_section += b'\x00\x01' if query_type == "A" else b'\x00\x1c'  # Type
-        answer_section += query_class  # Class
-        answer_section += b'\x00\x00\x00\x05'  # TTL (5 seconds)
-        answer_section += b'\x00\x04'  # Data length: 4 bytes
-        answer_section += self.ip_to_bytes(answer)  # IP address in bytes
+        # Create answer records for each IP address
+        for answer_type, answer_class, ttl, data_length, ip_address in answers:
+            # Create record type and class fields
+            record_type = answer_type.to_bytes(2, "big")
+            record_class = answer_class.to_bytes(2, "big")
+
+            # Create TTL field
+            ttl_bytes = ttl.to_bytes(4, byteorder='big')
+
+            # Create RDLength field
+            rd_length = len(ip_address.split('.'))  # Assuming IPv4 addresses
+            rd_length = rd_length.to_bytes(2, byteorder='big')
+
+            # Create RData field
+            rdata = b''
+            for octet in ip_address.split('.'):
+                rdata += int(octet).to_bytes(1, byteorder='big')
+
+            # Construct the answer record
+            answer_record = record_type + record_class + ttl_bytes + rd_length + rdata
+
+            # Append the answer record to the answer section
+            answer_section += answer_record
 
         return answer_section
-
-
-    @staticmethod
-    def ip_to_bytes(ip):
-        # Convert the IP address from string to bytes
-        ip_bytes = b''
-        for part in ip.split('.'):
-            ip_bytes += bytes([int(part)])
-        return ip_bytes
 
 
 if __name__ == '__main__':

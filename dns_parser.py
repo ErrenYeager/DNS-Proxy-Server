@@ -1,3 +1,6 @@
+import struct
+
+
 class DNSParser:
     @staticmethod
     def parse_dns_packet(data):
@@ -34,5 +37,57 @@ class DNSParser:
         return transaction_id, flags, question_count, question_parts, query_type, query_class
 
     @staticmethod
-    def find_ip_from_response(data):
-        pass
+    def parse_dns_response(response):
+        # Parse the header
+        header = struct.unpack('!6H', response[:12])
+        question_count = header[2]
+        answer_count = header[3]
+        authority_count = header[4]
+        additional_count = header[5]
+
+        # Parse the question section
+        offset = 12
+        for _ in range(question_count):
+            while response[offset] != 0:
+                offset += 1
+            offset += 5
+
+        # Parse the answer section
+        addresses = []
+        for _ in range(answer_count):
+            name, offset = DNSParser.read_name(response, offset)
+            answer_type, answer_class, ttl, data_length = struct.unpack('!HHIH', response[offset:offset+10])
+            offset += 10
+
+            if answer_type == 1:  # A record
+                ip_address = '.'.join(str(byte) for byte in response[offset:offset+4])
+                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
+
+            elif answer_type == 28:  # AAAA record
+                ip_address = ':'.join(str(byte) for byte in response[offset:offset+6])
+                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
+
+            offset += data_length
+
+        return addresses
+
+    @staticmethod
+    def read_name(response, offset):
+        name_parts = []
+        while True:
+            length = response[offset]
+            if length == 0:
+                break
+            elif length >= 192:  # Compression
+                pointer = struct.unpack('!H', response[offset:offset+2])[0] & 0x3FFF
+                name, _ = DNSParser.read_name(response, pointer)
+                name_parts.append(name)
+                offset += 2
+                break
+            else:
+                offset += 1
+                name_part = response[offset:offset+length].decode('utf-8')
+                name_parts.append(name_part)
+                offset += length
+
+        return '.'.join(name_parts), offset
