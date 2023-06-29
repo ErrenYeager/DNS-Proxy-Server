@@ -7,7 +7,6 @@ class DNSParser:
     def parse_dns_packet(data):
         header = data[:12]  # DNS header is 12 bytes
         questions = data[12:]  # Questions section starts from the 13th byte onwards
-        query_type = None
 
         # Parse header
         transaction_id = header[:2]
@@ -25,9 +24,11 @@ class DNSParser:
             question_parts.append(questions[idx + 1:idx + length + 1].decode())
             idx += length + 1
 
-        if questions[-3] == int('0x1c', 16):
+        query_type = struct.unpack("!H", questions[-4:-2])[0]
+
+        if query_type == 28:
             query_type = 'AAAA'
-        elif questions[-3] == int('0x01', 16):
+        elif query_type == 1:
             query_type = 'A'
         else:
             raise ValueError("Unsupported query type")
@@ -59,21 +60,18 @@ class DNSParser:
         for _ in range(answer_count):
             name, offset = DNSParser.read_name(response, offset)
 
-            # Read the pointer
-            pointer = b'\xc0\x0c'
-
             answer_type, answer_class, ttl, data_length = struct.unpack('!HHIH', response[offset:offset+10])
             offset += 10
 
             if answer_type == 1:  # A record
                 ip_address_bytes = response[offset:offset+4]
                 ip_address = socket.inet_ntop(socket.AF_INET, ip_address_bytes)
-                addresses.append((pointer, answer_type, answer_class, ttl, data_length, ip_address))
+                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
 
             elif answer_type == 28:  # AAAA record
                 ip_address_bytes = response[offset:offset+16]
                 ip_address = socket.inet_ntop(socket.AF_INET6, ip_address_bytes)
-                addresses.append((pointer, answer_type, answer_class, ttl, data_length, ip_address))
+                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
 
             offset += data_length
 

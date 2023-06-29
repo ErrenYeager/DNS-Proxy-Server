@@ -66,9 +66,10 @@ class DNSProxyServer:
 
     def create_answer_section(self, answers):
         answer_section = b''
+        pointer = b'\xc0\x0c'
 
-        # Create answer records for each IP address
-        for pointer, answer_type, answer_class, ttl, data_length, ip_address in answers:
+    # Create answer records for each IP address
+        for answer_type, answer_class, ttl, data_length, ip_address in answers:
 
             # Create record type and class fields
             record_type = answer_type.to_bytes(2, "big")
