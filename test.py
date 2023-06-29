@@ -1,21 +1,22 @@
-import socket
 import unittest
-from unittest.mock import patch
 from dns_proxy_server import DNSProxyServer
+from dns_resolver import DNSResolver
 
 
 class DNSProxyServerTests(unittest.TestCase):
-    @patch('socket.socket')
-    def test_construct_dns_response(self, mock_socket):
+    def setUp(self):
+        self.resolver = DNSResolver()
+
+    # Test case 1: A record response
+    def test_construct_dns_response(self):
         dns_proxy = DNSProxyServer()
 
-        # Test case 1: A record response
         transaction_id = b'\x12\x34'
         flags = 0x8180
         question_count = b'\x00\x01'
         queries = b'\x03www\x06google\x03com\x00'
         answers = [
-            (b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')
+            (1, 1, 3600, 4, '192.0.2.1')
         ]
 
         expected_response = b'\x124\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x03www\x06google\x03com\x00\xc0\x0c\x00\x01\x00\x01\x00\x00\x0e\x10\x00\x04\xc0\x00\x02\x01'
@@ -25,7 +26,7 @@ class DNSProxyServerTests(unittest.TestCase):
 
         # Test case 2: AAAA record response
         answers = [
-            (b'\xc0\x0c', 28, 1, 3600, 16, '2001:db8::1')
+            (28, 1, 3600, 16, '2001:db8::1')
         ]
 
         expected_response = b'\x124\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x03www\x06google\x03com\x00\xc0\x0c\x00\x1c\x00\x01\x00\x00\x0e\x10\x00\x10 \x01\r\xb8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01'
@@ -33,84 +34,46 @@ class DNSProxyServerTests(unittest.TestCase):
         response_packet = dns_proxy.construct_dns_response(transaction_id, flags, question_count, queries, answers)
         self.assertEqual(response_packet, expected_response)
 
-    # @patch('socket.socket')
-    # def test_start_dns_proxy(self, mock_socket):
-    #     # Mock the socket object and its methods
-    #     mock_socket_instance = mock_socket.return_value
-    #     mock_socket_instance.recvfrom.return_value = (b'\x98\x81\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x06google\x03com\x00\x00\x01\x00\x01', ('client', 1234))
-    #     mock_socket_instance.sendto.return_value = None
-    #
-    #     # Create an instance of DNSProxyServer
-    #     dns_proxy = DNSProxyServer()
-    #
-    #     # Test starting DNS proxy
-    #     with patch.object(dns_proxy, 'construct_dns_response') as mock_construct_dns_response:
-    #         mock_construct_dns_response.return_value = b'response_packet'
-    #
-    #         with patch.object(dns_proxy.resolver, 'resolve_dns') as mock_resolve_dns:
-    #             mock_resolve_dns.return_value = ([(b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')], 0x8180, False)
-    #
-    #             dns_proxy.start_dns_proxy()
-    #
-    #     # Assert calls to socket methods
-    #     mock_socket.assert_called_once_with(socket.AF_INET, socket.SOCK_DGRAM)
-    #     mock_socket_instance.bind.assert_called_once_with(('localhost', 53))
-    #     mock_socket_instance.recvfrom.assert_called_once_with(1024)
-    #     mock_socket_instance.sendto.assert_called_once_with(b'response_packet', ('client', 1234))
+    # Test case 2: cache hit
+    def test_cache_hit(self):
+        domain = "example.com"
+        query_type = "A"
+        data = b'\xdb\x84\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
 
-    # @patch('socket.socket')
-    # def test_resolve_dns_cache_hit(self, mock_socket):
-    #     dns_resolver = DNSProxyServer().resolver
-    #     dns_resolver.cache = {
-    #         ('example.com', 'A'): ([(b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')], 0x8180, 1234567890)
-    #     }
-    #
-    #     # Test cache hit
-    #     answers, flags, cache_hit = dns_resolver.resolve_dns('example.com', 'A', b'data')
-    #     self.assertEqual(answers, [(b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')])
-    #     self.assertEqual(flags, 0x8180)
-    #     self.assertTrue(cache_hit)
+        # Resolve the DNS query once
+        answers, flags, cache_flag = self.resolver.resolve_dns(domain, query_type, data)
+        self.assertIsNotNone(answers)
+        self.assertIsNotNone(flags)
+        self.assertFalse(flags & 0x0F)  # Check that the response code is not an error
 
-    @patch('socket.socket')
-    def test_resolve_dns_cache_miss(self, mock_socket):
-        dns_resolver = DNSProxyServer().resolver
+        # Resolve the same DNS query again
+        cached_answers, cached_flags, cache_flag = self.resolver.resolve_dns(domain, query_type, data)
+        self.assertEqual([tuple(i) for i in answers], [tuple(i) for i in cached_answers])  # Cached answers should match the original response
+        self.assertEqual(flags, cached_flags)  # Cached flags should match the original response
+        self.assertTrue(cache_flag)
 
-        # Mock the socket object and its methods
-        mock_socket_instance = mock_socket.return_value
-        mock_socket_instance.sendto.return_value = None
-        mock_socket_instance.recvfrom.return_value = (b'response', ('dns_server', 53))
+    def test_cache_miss(self):
+        domain = "example2.com"
+        query_type = "A"
+        data = b'\xdb\x84\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
 
-        # Test cache miss
-        with patch.object(dns_resolver, 'parse_dns_response') as mock_parse_dns_response:
-            mock_parse_dns_response.return_value = ([(b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')], 0x8180)
+        # Resolve the DNS query
+        answers, flags, cache_flag = self.resolver.resolve_dns(domain, query_type, data)
+        self.assertIsNotNone(answers)
+        self.assertIsNotNone(flags)
+        self.assertFalse(flags & 0x0F)  # Check that the response code is not an error
 
-            answers, flags, cache_hit = dns_resolver.resolve_dns('example.com', 'A', b'data')
+        # Modify the DNS query type to trigger a cache miss
+        modified_query_type = "AAAA"
+        modified_data = b'\xac\x92\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x1c\x00\x01'
 
-            # Assert calls to socket methods
-            mock_socket.assert_called_once_with(socket.AF_INET, socket.SOCK_DGRAM)
-            mock_socket_instance.sendto.assert_called_once_with(b'data', ('dns_server', 53))
-            mock_socket_instance.recvfrom.assert_called_once_with(512)
-
-            # Assert cache update
-            self.assertEqual(answers, [(b'\xc0\x0c', 1, 1, 3600, 4, '192.0.2.1')])
-            self.assertEqual(flags, 0x8180)
-            self.assertFalse(cache_hit)
-
-    # @patch('socket.socket')
-    # def test_resolve_dns_resolution_error(self, mock_socket):
-    #     dns_resolver = DNSProxyServer().resolver
-    #
-    #     # Mock the socket object and its methods
-    #     mock_socket_instance = mock_socket.return_value
-    #     mock_socket_instance.sendto.side_effect = Exception('Socket error')
-    #
-    #     # Test DNS resolution error
-    #     answers, flags, cache_hit = dns_resolver.resolve_dns('example.com', 'A', b'data')
-    #
-    #     # Assert cache update
-    #     self.assertIsNone(answers)
-    #     self.assertIsNone(flags)
-    #     self.assertFalse(cache_hit)
+        # Resolve the modified DNS query
+        cached_answers, cached_flags, cache_flag = self.resolver.resolve_dns(domain, modified_query_type, modified_data)
+        self.assertIsNotNone(cached_answers)
+        self.assertIsNotNone(cached_flags)
+        self.assertFalse(cached_flags & 0x0F)  # Check that the response code is not an error
+        self.assertNotEqual(answers, cached_answers)  # Cached answers should be different from the original response
+        self.assertFalse(cache_flag)
 
 
 if __name__ == '__main__':
