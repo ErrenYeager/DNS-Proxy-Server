@@ -12,6 +12,7 @@ WORKDIR /app
 COPY dns_parser.py .
 COPY dns_proxy_server.py .
 COPY dns_resolver.py .
+COPY config.json .
 
 EXPOSE 53
 # Specify the command to run

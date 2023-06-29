@@ -45,6 +45,14 @@ python dns_proxy_server.py
 
 The server will start listening on port 53. Make sure no other service is already using that port.
 
+## Run with docker
+
+```
+docker build -t dns_proxy_server .
+
+docker run --network host -p 53:53 -d dns_proxy_server
+```
+
 ## Features
 
 ### DNS Parsing
