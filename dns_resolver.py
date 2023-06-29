@@ -15,9 +15,9 @@ class DNSResolver:
 
     def resolve_dns(self, domain, query_type, data):
         if (domain, query_type) in self.cache:
-            answers, timestamp = self.cache[(domain, query_type)]
-            if (timestamp - datetime.datetime.now().timestamp()) <= self.cache_expiration_time:  # Check cache expiration time
-                return answers, True  # Cache hit
+            answers, flags, timestamp = self.cache[(domain, query_type)]
+            if (datetime.datetime.now().timestamp() - timestamp) <= self.cache_expiration_time:  # Check cache expiration time
+                return answers, flags, True  # Cache hit
 
         for dns_server in self.external_dns_servers:
             try:
@@ -28,10 +28,10 @@ class DNSResolver:
                     response, _ = sock.recvfrom(512)
 
                 timestamp = datetime.datetime.now().timestamp()
-                answers = DNSParser.parse_dns_response(response)
+                answers, flags = DNSParser.parse_dns_response(response)
 
-                self.cache[(domain, query_type)] = (answers, timestamp)
+                self.cache[(domain, query_type)] = (answers, flags, timestamp)
 
-                return answers, False  # Cache miss
+                return answers, flags, False  # Cache miss
             except Exception as e:
-                return None, False  # DNS resolution error
+                return None, None, False  # DNS resolution error

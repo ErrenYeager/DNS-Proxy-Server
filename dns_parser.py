@@ -1,4 +1,5 @@
 import struct
+import socket
 
 
 class DNSParser:
@@ -29,17 +30,17 @@ class DNSParser:
         elif questions[-3] == int('0x01', 16):
             query_type = 'A'
         else:
-            # TODO:Response to nslookup
             raise ValueError("Unsupported query type")
 
         query_class = questions[-2:]
 
-        return transaction_id, flags, question_count, question_parts, query_type, query_class
+        return transaction_id, question_count, question_parts, query_type, query_class
 
     @staticmethod
     def parse_dns_response(response):
         # Parse the header
         header = struct.unpack('!6H', response[:12])
+        flags = header[1]
         question_count = header[2]
         answer_count = header[3]
         authority_count = header[4]
@@ -54,22 +55,29 @@ class DNSParser:
 
         # Parse the answer section
         addresses = []
+
         for _ in range(answer_count):
             name, offset = DNSParser.read_name(response, offset)
+
+            # Read the pointer
+            pointer = b'\xc0\x0c'
+
             answer_type, answer_class, ttl, data_length = struct.unpack('!HHIH', response[offset:offset+10])
             offset += 10
 
             if answer_type == 1:  # A record
-                ip_address = '.'.join(str(byte) for byte in response[offset:offset+4])
-                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
+                ip_address_bytes = response[offset:offset+4]
+                ip_address = socket.inet_ntop(socket.AF_INET, ip_address_bytes)
+                addresses.append((pointer, answer_type, answer_class, ttl, data_length, ip_address))
 
             elif answer_type == 28:  # AAAA record
-                ip_address = ':'.join(str(byte) for byte in response[offset:offset+6])
-                addresses.append((answer_type, answer_class, ttl, data_length, ip_address))
+                ip_address_bytes = response[offset:offset+16]
+                ip_address = socket.inet_ntop(socket.AF_INET6, ip_address_bytes)
+                addresses.append((pointer, answer_type, answer_class, ttl, data_length, ip_address))
 
             offset += data_length
 
-        return addresses
+        return addresses, flags
 
     @staticmethod
     def read_name(response, offset):
